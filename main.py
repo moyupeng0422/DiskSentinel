@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from database import init_db
+from core.rules import init_rules
 from api.routes import dashboard, snapshots, comparison, cleaner, monitor
 
 app = FastAPI(title="DiskSentinel", version="1.0.0")
@@ -22,6 +23,7 @@ app.include_router(monitor.router, prefix="/api/monitor", tags=["实时监控"])
 async def startup():
     os.makedirs("data", exist_ok=True)
     init_db()
+    init_rules()
 
 
 @app.get("/")

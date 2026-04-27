@@ -3,18 +3,12 @@ import asyncio
 import threading
 from fastapi import APIRouter, HTTPException
 from core.snapshot import create_snapshot, run_scan, get_snapshots, get_snapshot, delete_snapshot
-from core.rules import init_rules
 
 router = APIRouter()
 
 # 扫描任务管理
 _scan_tasks = {}
 _scan_progress = {}
-
-
-@router.on_event("startup")
-async def startup():
-    init_rules()
 
 
 @router.post("")
