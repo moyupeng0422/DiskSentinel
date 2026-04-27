@@ -4,7 +4,6 @@ import math
 import time
 from config import DEFAULT_EXCLUDES, SCAN_BATCH_SIZE
 from core.disk_info import get_cluster_size
-from core.cluster_waste import estimate_alloc_size
 
 
 def should_exclude(path: str) -> bool:
@@ -46,7 +45,7 @@ def scan_drive(root_path: str, progress_callback=None):
                     try:
                         stat = entry.stat(follow_symlinks=False)
                         size = stat.st_size
-                        alloc = estimate_alloc_size(size, cluster_size)
+                        alloc = math.ceil(size / cluster_size) * cluster_size
                         mtime = stat.st_mtime
                         parent = os.path.dirname(entry.path)
                         ext = os.path.splitext(entry.name)[1].lower() or "(no-ext)"
