@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+aiofiles
+sse-starlette
+pywin32

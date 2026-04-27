@@ -1,0 +1,5 @@
+__pycache__/
+data/*.db
+release/output/
+*.pyc
+.env

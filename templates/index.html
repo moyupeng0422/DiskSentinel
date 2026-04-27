@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DiskSentinel - C 盘文件监控与清理</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="logo">DiskSentinel <br><span>C 盘监控与清理</span></div>
+  <nav>
+    <a class="active" data-page="dashboard" onclick="navigate('dashboard')">
+      <span class="icon">&#9632;</span> 仪表盘
+    </a>
+    <a data-page="snapshots" onclick="navigate('snapshots')">
+      <span class="icon">&#9638;</span> 快照管理
+    </a>
+    <a data-page="comparison" onclick="navigate('comparison')">
+      <span class="icon">&#8644;</span> 快照对比
+    </a>
+    <a data-page="cleaner" onclick="navigate('cleaner')">
+      <span class="icon">&#128465;</span> 清理中心
+    </a>
+    <a data-page="monitor" onclick="navigate('monitor')">
+      <span class="icon">&#9673;</span> 实时监控
+    </a>
+  </nav>
+</aside>
+
+<div class="main">
+  <!-- 仪表盘 -->
+  <div id="page-dashboard" class="page">
+    <h1 class="page-title">仪表盘</h1>
+    <div class="guide-tip">进入页面自动扫描 C 盘，<strong>统计卡片</strong>显示当前使用率，<strong>趋势图</strong>记录近 30 天变化，<strong>文件类型分布</strong>按分类统计占比，<strong>Top 100 目录</strong>列出占用空间最大的文件夹。</div>
+    <div class="stats-grid" id="disk-stats"></div>
+    <div class="chart-row">
+      <div class="card"><div class="card-header">磁盘使用趋势 (近 30 天)</div><div class="chart-container"><canvas id="trend-chart"></canvas></div></div>
+      <div class="card"><div class="card-header">文件类型分布</div><div class="chart-container"><canvas id="type-chart"></canvas></div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="card-header">最大目录 Top 100（按含子目录总大小）
+      <span style="font-size:12px;font-weight:normal;color:var(--text-secondary);margin-left:8px">勾选目标目录 → 发送到清理中心 → 预览确认 → 执行清理</span>
+      <div style="float:right;display:flex;gap:8px;align-items:center">
+        <span id="selected-count" style="font-size:12px;color:var(--text-secondary)"></span>
+        <button class="btn btn-primary" style="padding:4px 12px;font-size:12px" onclick="sendToCleaner()" id="btn-send-cleaner" disabled>发送到清理中心</button>
+      </div>
+    </div><div style="max-height:500px;overflow-y:auto"><table><thead><tr><th style="width:30px"><input type="checkbox" id="check-all-dirs" onchange="toggleAllDirs(this.checked)"></th><th>目录</th><th class="text-right">自身文件</th><th class="text-right">含子目录</th><th class="text-right">文件数</th></tr></thead><tbody id="largest-dirs"></tbody></table></div></div>
+  </div>
+
+  <!-- 快照管理 -->
+  <div id="page-snapshots" class="page" style="display:none">
+    <h1 class="page-title">快照管理</h1>
+    <div class="guide-tip"><strong>快照</strong>是当前 C 盘所有文件的完整记录。建议定期创建（如每周一次），用于追踪文件变化趋势。首次创建需要数分钟，取决于文件数量。</div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="createSnapshot()">创建新快照</button>
+    </div>
+    <div id="scan-progress" style="display:none" class="card">
+      <div class="card-header">扫描进度</div>
+      <div class="progress-bar"><div class="fill" id="progress-fill" style="width:0%"></div></div>
+      <div style="margin-top:8px;font-size:13px;color:var(--text-secondary)" id="progress-text">准备中...</div>
+    </div>
+    <div class="card"><table><thead><tr><th>名称</th><th>时间</th><th class="text-right">文件数</th><th class="text-right">总大小</th><th class="text-right">簇占用</th><th>状态</th><th></th></tr></thead><tbody id="snapshot-list"></tbody></table></div>
+  </div>
+
+  <!-- 快照对比 -->
+  <div id="page-comparison" class="page" style="display:none">
+    <h1 class="page-title">快照对比</h1>
+    <div class="guide-tip">选择<strong>两个不同时间点</strong>的快照进行对比，查看期间新增、删除、变大、变小的文件。<strong>基准快照</strong>为较早的时间点，<strong>对比快照</strong>为较新的时间点。</div>
+    <div style="display:flex;gap:12px;margin-bottom:16px;align-items:end">
+      <div class="form-group" style="margin:0;flex:1"><label>基准快照（较早）</label><select id="compare-base"></select></div>
+      <div style="font-size:20px;padding-bottom:8px">&#8594;</div>
+      <div class="form-group" style="margin:0;flex:1"><label>对比快照（较新）</label><select id="compare-new"></select></div>
+      <button class="btn btn-primary" onclick="runComparison()">对比</button>
+    </div>
+    <div id="comparison-result" style="display:none">
+      <div class="diff-summary" id="diff-summary"></div>
+      <div class="tabs">
+        <div class="tab active" onclick="switchDiffTab('new')">新增文件</div>
+        <div class="tab" onclick="switchDiffTab('deleted')">删除文件</div>
+        <div class="tab" onclick="switchDiffTab('grown')">变大文件</div>
+        <div class="tab" onclick="switchDiffTab('shrunk')">变小文件</div>
+      </div>
+      <div class="card"><div style="max-height:500px;overflow-y:auto"><table><thead><tr><th>路径</th><th class="text-right">大小</th><th class="text-right">变化量</th></tr></thead><tbody id="diff-table"></tbody></table></div></div>
+    </div>
+    <div id="comparison-empty" class="empty"><div class="icon">&#8644;</div><p>需要至少两个快照才能对比。请先在「快照管理」中创建快照。</p></div>
+  </div>
+
+  <!-- 清理中心 -->
+  <div id="page-cleaner" class="page" style="display:none">
+    <h1 class="page-title">清理中心 <span style="font-size:14px;font-weight:normal;color:var(--danger)">⚠ 请谨慎操作，清理前务必确认已成功备份</span></h1>
+    <div class="guide-tip"><strong>安全机制：</strong>清理前文件会先<strong>备份到指定磁盘</strong>（移动而非删除），清理后可随时一键恢复。操作流程：选择目标目录或规则 → 预览确认 → 执行清理。</div>
+    <div class="card">
+      <div class="card-header">备份目标盘</div>
+      <div class="form-group"><select id="backup-drive"></select></div>
+    </div>
+    <div class="tabs">
+      <div class="tab active" onclick="switchCleanerTab('dirs')">目录清理</div>
+      <div class="tab" onclick="switchCleanerTab('rules')">规则清理</div>
+    </div>
+    <!-- 目录清理 Tab -->
+    <div id="cleaner-dirs-tab">
+      <div class="card">
+        <div class="card-header">已选目录 <span style="float:right;font-size:12px;font-weight:normal;color:var(--text-secondary)">从仪表盘 Top 100 中选择目录发送</span></div>
+        <div id="cleaner-dirs-list" style="max-height:300px;overflow-y:auto">
+          <div style="text-align:center;padding:20px;color:var(--text-secondary)">暂无已选目录，请在仪表盘中勾选目录后点击"发送到清理中心"</div>
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="previewDirCleanup()" id="btn-preview-dirs" disabled>预览清理</button>
+        <button class="btn btn-danger" id="btn-execute-dirs" onclick="executeDirCleanup()" disabled>执行清理</button>
+        <button class="btn btn-outline" onclick="clearCleanerDirs()" id="btn-clear-dirs" style="display:none">清空列表</button>
+      </div>
+    </div>
+    <!-- 规则清理 Tab -->
+    <div id="cleaner-rules-tab" style="display:none">
+      <div class="guide-tip">按分类开启清理规则，点击「预览清理」查看将被清理的文件列表，确认无误后「执行清理」。</div>
+      <div id="cleaner-rules"></div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="previewCleanup()">预览清理</button>
+        <button class="btn btn-danger" id="btn-execute" onclick="executeCleanup()" disabled>执行清理</button>
+      </div>
+    </div>
+    <!-- 预览结果（两种模式共用） -->
+    <div id="cleanup-preview" style="display:none">
+      <div class="card">
+        <div class="card-header">预览结果</div>
+        <div id="preview-summary"></div>
+        <div style="max-height:400px;overflow-y:auto"><table><thead><tr><th>路径</th><th class="text-right">大小</th><th>来源</th></tr></thead><tbody id="preview-files"></tbody></table></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div class="card-header">备份历史</div>
+      <table><thead><tr><th>时间</th><th>目标盘</th><th class="text-right">文件数</th><th class="text-right">大小</th><th>操作</th></tr></thead><tbody id="backup-history"></tbody></table>
+    </div>
+  </div>
+
+  <!-- 实时监控 -->
+  <div id="page-monitor" class="page" style="display:none">
+    <h1 class="page-title">实时监控</h1>
+    <div class="guide-tip">实时监控 C 盘文件变更事件（新增、修改、删除）。适合在安装软件、运行程序时观察哪些文件被修改，或排查磁盘空间异常增长原因。<strong>监控分析</strong>自动按目录聚合统计，单目录新增占用超过 500MB 时会标红警示。</div>
+    <div class="btn-group">
+      <button class="btn btn-primary" id="btn-monitor-start" onclick="startMonitor()">启动监控</button>
+      <button class="btn btn-outline" id="btn-monitor-stop" onclick="stopMonitor()" disabled>停止监控</button>
+      <span id="monitor-status" style="line-height:36px;font-size:13px;color:var(--text-secondary)">未启动</span>
+    </div>
+    <div id="monitor-analysis" class="card" style="display:none">
+      <div class="card-header">监控分析 <span style="font-size:12px;font-weight:normal;color:var(--text-secondary)">自动识别活跃目录和异常写入</span></div>
+      <div id="analysis-summary" style="margin-bottom:10px;font-size:13px;color:var(--text-secondary)"></div>
+      <div id="analysis-alerts"></div>
+      <table><thead><tr><th>目录</th><th class="text-right">新增</th><th class="text-right">修改</th><th class="text-right">删除</th><th class="text-right">新增占用</th></tr></thead><tbody id="analysis-table"></tbody></table>
+    </div>
+    <div class="card">
+      <div class="event-stream" id="event-stream">
+        <div class="empty"><p>点击「启动监控」开始观察 C 盘文件变更</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
