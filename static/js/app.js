@@ -424,6 +424,7 @@ async function runComparison() {
     <div class="diff-card deleted"><div class="count text-danger">${s.deleted_count}</div><div class="size">${fmtSize(s.deleted_total_bytes)}</div><div style="font-size:12px">删除</div></div>
     <div class="diff-card grown"><div class="count text-danger">${s.grown_count}</div><div class="size">+${fmtSize(s.grown_total_bytes)}</div><div style="font-size:12px">变大</div></div>
     <div class="diff-card shrunk"><div class="count text-success">${s.shrunk_count}</div><div class="size">-${fmtSize(s.shrunk_total_bytes)}</div><div style="font-size:12px">变小</div></div>
+    <div style="clear:both;font-size:11px;color:var(--text-secondary);margin-top:8px">列表按文件大小排序，每类最多显示 500 条</div>
   `;
   switchDiffTab('new', baseId, newId);
 }

@@ -126,7 +126,32 @@ def compare_snapshots(base_id: int, compare_id: int) -> dict:
     """对比两个快照，返回差异"""
     conn = get_db()
     try:
-        # 新增文件
+        # 数量统计（不限）
+        new_count = conn.execute("""
+            SELECT COUNT(*) FROM file_entries c
+            LEFT JOIN file_entries b ON c.file_path = b.file_path AND b.snapshot_id = ?
+            WHERE c.snapshot_id = ? AND b.id IS NULL
+        """, (base_id, compare_id)).fetchone()[0]
+
+        deleted_count = conn.execute("""
+            SELECT COUNT(*) FROM file_entries b
+            LEFT JOIN file_entries c ON b.file_path = c.file_path AND c.snapshot_id = ?
+            WHERE b.snapshot_id = ? AND c.id IS NULL
+        """, (compare_id, base_id)).fetchone()[0]
+
+        grown_count = conn.execute("""
+            SELECT COUNT(*) FROM file_entries c
+            JOIN file_entries b ON c.file_path = b.file_path
+            WHERE c.snapshot_id = ? AND b.snapshot_id = ? AND c.file_size > b.file_size
+        """, (compare_id, base_id)).fetchone()[0]
+
+        shrunk_count = conn.execute("""
+            SELECT COUNT(*) FROM file_entries c
+            JOIN file_entries b ON c.file_path = b.file_path
+            WHERE c.snapshot_id = ? AND b.snapshot_id = ? AND c.file_size < b.file_size
+        """, (compare_id, base_id)).fetchone()[0]
+
+        # 文件列表（限 500 条，按大小排序）
         new_files = conn.execute("""
             SELECT c.file_path, c.file_size, c.alloc_size, c.mtime, c.extension
             FROM file_entries c
@@ -135,7 +160,6 @@ def compare_snapshots(base_id: int, compare_id: int) -> dict:
             ORDER BY c.file_size DESC LIMIT 500
         """, (base_id, compare_id)).fetchall()
 
-        # 删除的文件
         deleted_files = conn.execute("""
             SELECT b.file_path, b.file_size, b.alloc_size, b.mtime, b.extension
             FROM file_entries b
@@ -144,7 +168,6 @@ def compare_snapshots(base_id: int, compare_id: int) -> dict:
             ORDER BY b.file_size DESC LIMIT 500
         """, (compare_id, base_id)).fetchall()
 
-        # 变大的文件
         grown_files = conn.execute("""
             SELECT c.file_path, b.file_size AS old_size, c.file_size AS new_size,
                    c.alloc_size, c.mtime, c.extension,
@@ -155,7 +178,6 @@ def compare_snapshots(base_id: int, compare_id: int) -> dict:
             ORDER BY delta DESC LIMIT 500
         """, (compare_id, base_id)).fetchall()
 
-        # 变小的文件
         shrunk_files = conn.execute("""
             SELECT c.file_path, b.file_size AS old_size, c.file_size AS new_size,
                    c.alloc_size, c.mtime, c.extension,
@@ -176,13 +198,13 @@ def compare_snapshots(base_id: int, compare_id: int) -> dict:
             "base_snapshot": get_snapshot(base_id),
             "compare_snapshot": get_snapshot(compare_id),
             "summary": {
-                "new_count": len(new_files),
+                "new_count": new_count,
                 "new_total_bytes": new_total,
-                "deleted_count": len(deleted_files),
+                "deleted_count": deleted_count,
                 "deleted_total_bytes": deleted_total,
-                "grown_count": len(grown_files),
+                "grown_count": grown_count,
                 "grown_total_bytes": grown_total,
-                "shrunk_count": len(shrunk_files),
+                "shrunk_count": shrunk_count,
                 "shrunk_total_bytes": shrunk_total,
             },
             "new_files": [dict(r) for r in new_files],
